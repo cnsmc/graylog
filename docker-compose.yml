@@ -1,0 +1,71 @@
+version: '3'
+
+networks:
+    graylog:
+
+volumes:
+  mongo-data:
+  graylog-journal:
+  elasticsearch-data:
+
+services:
+    mongo:
+      image: mongo:4.2
+      restart: unless-stopped
+      volumes:
+        - mongo-data:/data/db
+      networks:
+        - graylog
+
+    elasticsearch:
+      image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.10.2
+      restart: unless-stopped
+      environment:
+        - http.host=0.0.0.0
+        - transport.host=localhost
+        - network.host=0.0.0.0
+        # Disk-based shard allocation settings
+        # 配置磁盘分配策略
+        - cluster.routing.allocation.disk.watermark.low=92%
+        - cluster.routing.allocation.disk.watermark.high=95%
+        - cluster.routing.allocation.disk.watermark.flood_stage=98%
+        - "ES_JAVA_OPTS=-Dlog4j2.formatMsgNoLookups=true -Xms512m -Xmx512m"
+      volumes:
+        - elasticsearch-data:/usr/share/elasticsearch/data
+      ulimits:
+        memlock:
+          soft: -1
+          hard: -1
+      deploy:
+        resources:
+          limits:
+            memory: 1g
+      networks:
+        - graylog
+
+    graylog:
+      image: graylog/graylog:4.3
+      restart: unless-stopped
+      environment:
+        - GRAYLOG_PASSWORD_SECRET=forpasswordencryption
+        # Password: admin
+        - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+        - GRAYLOG_HTTP_BIND_ADDRESS=0.0.0.0:9900
+        - GRAYLOG_HTTP_EXTERNAL_URI=http://10.0.10.23:9900/
+        # Index Rotation Configuration and Index Retention Configuration
+        # 创建索引策略，索引使用时间策略，以下配置为保存1年日志
+        - GRAYLOG_ROTATION_STRATEGY=time
+        - GRAYLOG_ELASTICSEARCH_MAX_TIME_PER_INDEX=1w
+        - GRAYLOG_ELASTICSEARCH_MAX_NUMBER_OF_INDICES=52
+        - GRAYLOG_RETENTION_STRATEGY=delete
+      volumes:
+        - graylog-journal:/usr/share/graylog/data/journal
+      networks:
+        - graylog
+      depends_on:
+        - mongo
+        - elasticsearch
+      ports:
+        - 9900:9900
+        - 12201:12201
+        - 12201:12201/udp
